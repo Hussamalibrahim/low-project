@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/localization/app_strings.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../shared/widgets/app_card.dart';
@@ -10,22 +9,6 @@ import '../../../../shared/widgets/app_text_field.dart';
 import '../../../cases/presentation/providers/cases_provider.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../providers/dashboard_provider.dart';
-
-class _DashboardShortcutItem {
-  final String id;
-  final String title;
-  final IconData icon;
-  final Color color;
-  final String route;
-
-  const _DashboardShortcutItem({
-    required this.id,
-    required this.title,
-    required this.icon,
-    required this.color,
-    required this.route,
-  });
-}
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -39,88 +22,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   bool _isWeeklyView = false;
   late DateTime _currentWeekStart;
 
-  List<String> _enabledShortcutIds = [
-    'cases_new',
-    'cases_list',
-    'hearings_list',
-    'clients_new',
-    'tasks_list',
-    'library',
-  ];
-
-  static const List<_DashboardShortcutItem> _allShortcuts = [
-    _DashboardShortcutItem(
-      id: 'cases_new',
-      title: 'قيد دعوى جديدة',
-      icon: Icons.add_circle,
-      color: Colors.amber,
-      route: '/cases/new',
-    ),
-    _DashboardShortcutItem(
-      id: 'cases_list',
-      title: 'سجل القضايا',
-      icon: Icons.gavel,
-      color: Colors.blue,
-      route: '/cases',
-    ),
-    _DashboardShortcutItem(
-      id: 'hearings_list',
-      title: 'جدول الجلسات',
-      icon: Icons.event_note,
-      color: Colors.orange,
-      route: '/hearings',
-    ),
-    _DashboardShortcutItem(
-      id: 'clients_new',
-      title: 'إضافة موكل',
-      icon: Icons.person_add_alt_1,
-      color: Colors.teal,
-      route: '/clients/new',
-    ),
-    _DashboardShortcutItem(
-      id: 'clients_list',
-      title: 'دليل الموكلين',
-      icon: Icons.people_alt,
-      color: Colors.green,
-      route: '/clients',
-    ),
-    _DashboardShortcutItem(
-      id: 'tasks_list',
-      title: 'المهام والمهل',
-      icon: Icons.fact_check,
-      color: Colors.purple,
-      route: '/tasks',
-    ),
-    _DashboardShortcutItem(
-      id: 'library',
-      title: 'المكتبة القانونية',
-      icon: Icons.menu_book,
-      color: Colors.indigo,
-      route: '/library',
-    ),
-    _DashboardShortcutItem(
-      id: 'calculator',
-      title: 'حاسبة الرسوم والمدد',
-      icon: Icons.calculate,
-      color: Colors.deepOrange,
-      route: '/calculator',
-    ),
-    _DashboardShortcutItem(
-      id: 'files',
-      title: 'المستندات والملفات',
-      icon: Icons.folder_special,
-      color: Colors.cyan,
-      route: '/files',
-    ),
-    _DashboardShortcutItem(
-      id: 'backup',
-      title: 'النسخ والترحيل',
-      icon: Icons.cloud_sync,
-      color: Colors.blueGrey,
-      route: '/backup',
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -128,120 +29,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final satOffset = (now.weekday + 1) % 7;
     _currentWeekStart = DateTime(now.year, now.month, now.day)
         .subtract(Duration(days: satOffset));
-    _loadSavedShortcuts();
-  }
-
-  Future<void> _loadSavedShortcuts() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getStringList('custom_dashboard_shortcuts');
-    if (saved != null && saved.isNotEmpty && mounted) {
-      setState(() => _enabledShortcutIds = saved);
-    }
-  }
-
-  Future<void> _saveShortcuts(List<String> ids) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('custom_dashboard_shortcuts', ids);
-    if (mounted) {
-      setState(() => _enabledShortcutIds = ids);
-    }
-  }
-
-  void _showCustomizeShortcutsDialog() {
-    final tempSelected = List<String>.from(_enabledShortcutIds);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 20,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'تخصيص الاختصارات السريعة',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const Text(
-                    'اختر الاختصارات التي تريد إظهارها في صفحتك الرئيسية لتسهيل الوصول إليها:',
-                    style: TextStyle(fontSize: 13, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 12),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(ctx).size.height * 0.5,
-                    ),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: _allShortcuts.length,
-                      itemBuilder: (ctx, index) {
-                        final s = _allShortcuts[index];
-                        final isSelected = tempSelected.contains(s.id);
-                        return CheckboxListTile(
-                          value: isSelected,
-                          onChanged: (val) {
-                            setSheetState(() {
-                              if (val == true) {
-                                tempSelected.add(s.id);
-                              } else {
-                                tempSelected.remove(s.id);
-                              }
-                            });
-                          },
-                          secondary: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: s.color.withAlpha(30),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(s.icon, color: s.color, size: 22),
-                          ),
-                          title: Text(
-                            s.title,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _saveShortcuts(tempSelected);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: const Text('حفظ الاختصارات', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   static const List<String> _weekDays = [
@@ -516,6 +303,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ref.watch(dashboardDaysWithEventsStreamProvider(_visibleMonth));
     final agendaAsync =
         ref.watch(dashboardAgendaStreamProvider(selectedDate));
+    final caseListItemsAsync = ref.watch(caseListItemsStreamProvider);
 
     final daysWithEvents = daysWithEventsAsync.value ?? {};
     final daysInMonth = _daysInMonth(_visibleMonth);
@@ -1185,68 +973,56 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
             error: (e, _) => Text('تعذر تحميل جدول اليوم: $e'),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // 3. جدول الاختصارات السريعة (مع زر + لتخصيص الإشارات التي يريدها المحامي)
+          // 3. القضايا الحالية (خانة تظهر 5 قضايا مع إمكانية التمرير لرؤية البقية)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.dashboard_customize_rounded,
-                      color: theme.colorScheme.primary, size: 22),
-                  const SizedBox(width: 8),
-                  Text(
-                    'جدول الاختصارات السريعة',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+              Expanded(
+                child: Text(
+                  'القضايا الحالية قيد النظر',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
-                ],
-              ),
-              IconButton(
-                onPressed: _showCustomizeShortcutsDialog,
-                icon: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withAlpha(25),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.add,
-                      color: theme.colorScheme.primary, size: 22),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                tooltip: 'تخصيص الاختصارات (+)',
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () => context.go('/cases'),
+                icon: const Icon(Icons.gavel, size: 16),
+                label: const Text('عرض كافة القضايا'),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
 
-          Builder(
-            builder: (context) {
-              final displayedShortcuts = _allShortcuts
-                  .where((s) => _enabledShortcutIds.contains(s.id))
+          caseListItemsAsync.when(
+            data: (allCases) {
+              final activeCases = allCases
+                  .where((c) =>
+                      c.caseItem.status == 'OPEN' ||
+                      c.caseItem.status == 'PENDING' ||
+                      c.caseItem.status == 'APPEALED')
                   .toList();
 
-              if (displayedShortcuts.isEmpty) {
+              if (activeCases.isEmpty) {
                 return AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 20),
-                    child: Center(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Column(
                         children: [
-                          Icon(Icons.widgets_outlined,
-                              size: 40, color: theme.hintColor),
+                          Icon(Icons.folder_open,
+                              size: 36, color: theme.hintColor),
                           const SizedBox(height: 8),
-                          const Text(
-                            'لم يتم تحديد أي اختصارات سريعة بعد',
-                            style: TextStyle(fontSize: 15),
-                          ),
-                          const SizedBox(height: 10),
+                          const Text('لا توجد قضايا حالية مفتوحة'),
+                          const SizedBox(height: 8),
                           ElevatedButton.icon(
-                            onPressed: _showCustomizeShortcutsDialog,
+                            onPressed: () => context.push('/cases/new'),
                             icon: const Icon(Icons.add, size: 18),
-                            label: const Text('إضافة اختصارات إلى الصفحة'),
+                            label: const Text('قيد أول قضية الآن'),
                           ),
                         ],
                       ),
@@ -1255,62 +1031,167 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 );
               }
 
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: 2.2,
-                ),
-                itemCount: displayedShortcuts.length,
-                itemBuilder: (context, index) {
-                  final item = displayedShortcuts[index];
-                  return Material(
-                    color: theme.cardColor,
-                    borderRadius: BorderRadius.circular(12),
-                    elevation: 1,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => context.push(item.route),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 8),
+              final displayedCases = activeCases.take(5).toList();
+
+              return Column(
+                children: [
+                  ...displayedCases.map((item) {
+                    final isPlaintiff = item.clientRole == 'مدعي';
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: AppCard(
+                        onTap: () =>
+                            context.push('/cases/${item.caseItem.id}'),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: item.color.withAlpha(25),
+                                color: isPlaintiff
+                                    ? Colors.blue.withAlpha(25)
+                                    : Colors.red.withAlpha(25),
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: Icon(item.icon,
-                                  color: item.color, size: 22),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                item.title,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                              child: Icon(
+                                Icons.balance,
+                                color: isPlaintiff
+                                    ? Colors.blue
+                                    : Colors.red.shade700,
+                                size: 22,
                               ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // اسم الموكل فقط
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.person,
+                                          size: 16, color: Colors.blue),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          item.clientName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+
+                                  // نوع القضية فقط (بدون رقم الأساس)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primary
+                                          .withAlpha(25),
+                                      borderRadius:
+                                          BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      item.caseItem.caseType,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+
+                                  // المحكمة والخصم
+                                  if (item.courtName != null) ...[
+                                    Row(
+                                      children: [
+                                        Icon(Icons.account_balance,
+                                            size: 13,
+                                            color: theme.hintColor),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            item.courtName!,
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                color: theme.hintColor),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                  if (item.opponentName != null &&
+                                      item.opponentName!.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Icon(Icons.shield_outlined,
+                                            size: 13,
+                                            color: theme.hintColor),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            'الخصم: ${item.opponentName}',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                color: theme.hintColor),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Column(
+                              children: [
+                                AppStatusBadge(
+                                  label: item.clientRole,
+                                  color:
+                                      isPlaintiff ? Colors.blue : Colors.red,
+                                ),
+                                const SizedBox(height: 8),
+                                const Icon(Icons.arrow_forward_ios,
+                                    size: 14, color: Colors.grey),
+                              ],
                             ),
                           ],
                         ),
                       ),
+                    );
+                  }),
+                  if (activeCases.length > 5) ...[
+                    const SizedBox(height: 4),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: () => context.go('/cases'),
+                        icon: const Icon(Icons.arrow_back, size: 16),
+                        label: Text(
+                            'عرض باقي القضايا (${activeCases.length - 5} قضايا إضافية)'),
+                      ),
                     ),
-                  );
-                },
+                  ],
+                ],
               );
             },
+            loading: () => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(),
+              ),
+            ),
+            error: (e, _) => Text('تعذر تحميل القضايا: $e'),
           ),
-
-
           const SizedBox(height: 24),
         ],
       ),
