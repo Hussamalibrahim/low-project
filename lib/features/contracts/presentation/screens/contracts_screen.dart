@@ -106,7 +106,7 @@ class ContractsScreen extends ConsumerWidget {
                     },
                   ),
                   ListTile(
-                    title: const Text('تاريخ الانتهاء (اختياري)'),
+                    title: const Text('تاريخ الانتهاء'),
                     subtitle: Text(expiryDate != null
                         ? AppDateFormatter.formatDate(expiryDate!)
                         : 'غير محدد (ساري المفعول)'),

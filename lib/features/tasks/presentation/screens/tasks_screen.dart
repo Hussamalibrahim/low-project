@@ -54,7 +54,7 @@ class TasksScreen extends ConsumerWidget {
                   if (cases.isNotEmpty)
                     DropdownButtonFormField<String>(
                       initialValue: selectedCaseId,
-                      decoration: const InputDecoration(labelText: 'ربط بقضية (اختياري)'),
+                      decoration: const InputDecoration(labelText: 'ربط بقضية'),
                       items: [
                         const DropdownMenuItem(
                             value: null, child: Text('بدون قضية')),
@@ -169,7 +169,7 @@ class TasksScreen extends ConsumerWidget {
                   DropdownButtonFormField<String?>(
                     value: selectedClientId,
                     decoration:
-                        const InputDecoration(labelText: 'ربط بموكل (اختياري)'),
+                        const InputDecoration(labelText: 'ربط بموكل'),
                     items: [
                       const DropdownMenuItem(
                           value: null, child: Text('بدون موكل')),
@@ -189,7 +189,7 @@ class TasksScreen extends ConsumerWidget {
                   DropdownButtonFormField<String?>(
                     value: selectedCaseId,
                     decoration:
-                        const InputDecoration(labelText: 'ربط بقضية (اختياري)'),
+                        const InputDecoration(labelText: 'ربط بقضية'),
                     items: [
                       const DropdownMenuItem(
                           value: null, child: Text('بدون قضية')),

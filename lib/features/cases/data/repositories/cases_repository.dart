@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/utils/arabic_normalizer.dart';
+import '../../../../core/utils/date_formatter.dart';
 
 class CaseListItem {
   final Case caseItem;
@@ -596,6 +597,21 @@ class CasesRepository {
     String currency = 'SYP',
     List<String> attachedFilePaths = const [],
     List<({String path, String displayName})> attachedNamedFiles = const [],
+    String status = 'OPEN',
+    String? outcome,
+    int? closingDate,
+    List<({
+      String courtName,
+      String caseNumber,
+      int caseYear,
+      String? claimBadge,
+      String? decisionRuling,
+      String? decisionNum,
+      int? decisionDate,
+      int? notificationDate,
+      String? grounds,
+      List<({int date, String action, String? decision})> hearings,
+    })> pastStages = const [],
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final caseId = const Uuid().v4();
@@ -659,7 +675,9 @@ class CasesRepository {
               subject: Value(subject?.trim()),
               notes: Value(notes?.trim()),
               currency: Value(currency),
-              status: 'OPEN',
+              status: status,
+              outcome: Value(outcome?.trim()),
+              closingDate: Value(closingDate),
               createdAt: now,
               updatedAt: now,
             ),
@@ -886,6 +904,57 @@ class CasesRepository {
                 id: const Uuid().v4(),
                 caseId: caseId,
                 documentId: docId,
+                createdAt: now,
+              ),
+            );
+      }
+
+      // 9.1. حفظ المراحل المفصولة السابقة (يدعم استئناف وطعن متعدد وسجل كامل للجلسات)
+      for (final stg in pastStages) {
+        final stageTitle = '${stg.courtName.trim().isNotEmpty ? stg.courtName.trim() : "مرحلة سابقة"} (أساس ${stg.caseNumber.trim().isNotEmpty ? stg.caseNumber.trim() : "-"} لعام ${stg.caseYear})';
+        final buffer = StringBuffer();
+        if (stg.claimBadge != null && stg.claimBadge!.trim().isNotEmpty) {
+          buffer.writeln('شارة الدعوى: ${stg.claimBadge!.trim()}');
+        }
+        if (stg.decisionNum != null && stg.decisionNum!.trim().isNotEmpty) {
+          var line = 'رقم القرار: ${stg.decisionNum!.trim()}';
+          if (stg.decisionDate != null) {
+            line += ' تاريخ: ${AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(stg.decisionDate!))}';
+          }
+          buffer.writeln(line);
+        } else if (stg.decisionDate != null) {
+          buffer.writeln('تاريخ القرار: ${AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(stg.decisionDate!))}');
+        }
+        if (stg.decisionRuling != null && stg.decisionRuling!.trim().isNotEmpty) {
+          buffer.writeln('قرار الفصل: ${stg.decisionRuling!.trim()}');
+        }
+        if (stg.notificationDate != null) {
+          buffer.writeln('تاريخ التبليغ: ${AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(stg.notificationDate!))}');
+        }
+        if (stg.grounds != null && stg.grounds!.trim().isNotEmpty) {
+          buffer.writeln('أسباب الاستئناف / الطعن: ${stg.grounds!.trim()}');
+        }
+        if (stg.hearings.isNotEmpty) {
+          buffer.writeln('\nسجل جلسات وإجراءات المرحلة (${stg.hearings.length}):');
+          for (final h in stg.hearings) {
+            final d = AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(h.date));
+            var line = '• $d: ${h.action}';
+            if (h.decision != null && h.decision!.trim().isNotEmpty) {
+              line += ' [القرار: ${h.decision!.trim()}]';
+            }
+            buffer.writeln(line);
+          }
+        }
+
+        await _db.into(_db.caseProcedures).insert(
+              CaseProceduresCompanion.insert(
+                id: const Uuid().v4(),
+                caseId: caseId,
+                procedureDate: stg.decisionDate ?? stg.notificationDate ?? now,
+                procedureType: 'CONCLUDED_STAGE',
+                title: stageTitle,
+                description: Value(buffer.toString().trim().isNotEmpty ? buffer.toString().trim() : null),
+                result: const Value('مفصولة'),
                 createdAt: now,
               ),
             );
@@ -1167,14 +1236,38 @@ class CasesRepository {
     if (currentCase == null) return;
 
     await _db.transaction(() async {
-      // 1. أرشفة المرحلة السابقة في سجل الإجراءات والمراحل المفصولة
+      // 1. جلب جلسات المرحلة السابقة وتوثيقها في سجل المرحلة المفصولة
+      final prevHearings = await (_db.select(_db.hearings)
+            ..where((tbl) => tbl.caseId.equals(caseId) & tbl.deletedAt.isNull())
+            ..orderBy([(tbl) => OrderingTerm.asc(tbl.hearingDate)]))
+          .get();
+
+      final hearingsSummary = StringBuffer();
+      if (prevHearings.isNotEmpty) {
+        hearingsSummary.writeln('سجل جلسات المحاكمة للمرحلة المفصولة (${prevHearings.length} جلسة):');
+        for (final h in prevHearings) {
+          final d = AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(h.hearingDate));
+          var line = '• $d: ${h.hearingType}';
+          if (h.postponementReason != null && h.postponementReason!.isNotEmpty) {
+            line += ' (تأجيل: ${h.postponementReason})';
+          } else if (h.decision != null && h.decision!.isNotEmpty) {
+            line += ' (القرار: ${h.decision})';
+          }
+          hearingsSummary.writeln(line);
+        }
+      }
+
+      // أرشفة المرحلة السابقة في سجل الإجراءات والمراحل المفصولة
       final stageTitle = 'مرحلة ${currentCase.stage} (أساس ${currentCase.caseNumber} لعام ${currentCase.caseYear})';
-      final stageDesc = [
+      final stageDescParts = [
         if (currentCase.outcome != null && currentCase.outcome!.isNotEmpty)
-          'القرار السابق:\n${currentCase.outcome}',
+          'قرار الفصل:\n${currentCase.outcome}',
         if (grounds != null && grounds.trim().isNotEmpty)
           'أسباب الاستئناف / الطعن:\n${grounds.trim()}',
-      ].join('\n\n');
+        if (hearingsSummary.isNotEmpty)
+          hearingsSummary.toString().trim(),
+      ];
+      final stageDesc = stageDescParts.join('\n\n');
 
       await _db.into(_db.caseProcedures).insert(
             CaseProceduresCompanion.insert(
@@ -1188,6 +1281,13 @@ class CasesRepository {
               createdAt: now,
             ),
           );
+
+      // أرشفة جلسات المرحلة السابقة في جدول الجلسات لتبدأ المرحلة الجديدة بجدول جلسات مستقل
+      for (final h in prevHearings) {
+        await (_db.update(_db.hearings)..where((tbl) => tbl.id.equals(h.id))).write(
+          HearingsCompanion(deletedAt: Value(now)),
+        );
+      }
 
       // 2. تحديث القضية للمرحلة الجديدة
       final updatedNotes = [
@@ -1249,6 +1349,70 @@ class CasesRepository {
               tbl.deletedAt.isNull())
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.procedureDate)]))
         .watch();
+  }
+
+  /// إضافة مرحلة قضائية سابقة مفصولة إلى ملف القضية
+  Future<void> addConcludedStage({
+    required String caseId,
+    required String courtName,
+    required String caseNumber,
+    required int caseYear,
+    String? claimBadge,
+    String? decisionRuling,
+    String? decisionNum,
+    int? decisionDate,
+    int? notificationDate,
+    String? grounds,
+    List<({int date, String action, String? decision})> hearings = const [],
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final stageTitle = '${courtName.trim().isNotEmpty ? courtName.trim() : "مرحلة سابقة"} (أساس ${caseNumber.trim().isNotEmpty ? caseNumber.trim() : "-"} لعام $caseYear)';
+    final buffer = StringBuffer();
+    if (claimBadge != null && claimBadge.trim().isNotEmpty) {
+      buffer.writeln('شارة الدعوى: ${claimBadge.trim()}');
+    }
+    if (decisionNum != null && decisionNum.trim().isNotEmpty) {
+      var line = 'رقم القرار: ${decisionNum.trim()}';
+      if (decisionDate != null) {
+        line += ' تاريخ: ${AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(decisionDate))}';
+      }
+      buffer.writeln(line);
+    } else if (decisionDate != null) {
+      buffer.writeln('تاريخ القرار: ${AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(decisionDate))}');
+    }
+    if (decisionRuling != null && decisionRuling.trim().isNotEmpty) {
+      buffer.writeln('قرار الفصل: ${decisionRuling.trim()}');
+    }
+    if (notificationDate != null) {
+      buffer.writeln('تاريخ التبليغ: ${AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(notificationDate))}');
+    }
+    if (grounds != null && grounds.trim().isNotEmpty) {
+      buffer.writeln('أسباب الاستئناف / الطعن: ${grounds.trim()}');
+    }
+    if (hearings.isNotEmpty) {
+      buffer.writeln('\nسجل جلسات وإجراءات المرحلة (${hearings.length}):');
+      for (final h in hearings) {
+        final d = AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(h.date));
+        var line = '• $d: ${h.action}';
+        if (h.decision != null && h.decision!.trim().isNotEmpty) {
+          line += ' [القرار: ${h.decision!.trim()}]';
+        }
+        buffer.writeln(line);
+      }
+    }
+
+    await _db.into(_db.caseProcedures).insert(
+          CaseProceduresCompanion.insert(
+            id: const Uuid().v4(),
+            caseId: caseId,
+            procedureDate: decisionDate ?? notificationDate ?? now,
+            procedureType: 'CONCLUDED_STAGE',
+            title: stageTitle,
+            description: Value(buffer.toString().trim().isNotEmpty ? buffer.toString().trim() : null),
+            result: const Value('مفصولة'),
+            createdAt: now,
+          ),
+        );
   }
 
   /// تسجيل تبليغ قضائي جديد

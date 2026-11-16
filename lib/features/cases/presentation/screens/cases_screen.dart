@@ -39,7 +39,7 @@ class CasesScreen extends ConsumerWidget {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/cases/new'),
         icon: const Icon(Icons.add),
-        label: const Text('قيد قضية جديدة'),
+        label: const Text('قضية جديدة'),
       ),
       body: Column(
         children: [

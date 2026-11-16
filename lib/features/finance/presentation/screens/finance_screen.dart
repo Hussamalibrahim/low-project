@@ -73,7 +73,7 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen>
                     isExpanded: true,
                     initialValue: selectedCaseId,
                     decoration:
-                        const InputDecoration(labelText: 'القضية (اختياري)'),
+                        const InputDecoration(labelText: 'القضية'),
                     items: [
                       const DropdownMenuItem(
                           value: null, child: Text('بدون تحديد قضية')),
@@ -221,7 +221,7 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen>
                     isExpanded: true,
                     initialValue: selectedCaseId,
                     decoration:
-                        const InputDecoration(labelText: 'القضية (اختياري)'),
+                        const InputDecoration(labelText: 'القضية'),
                     items: [
                       const DropdownMenuItem(
                           value: null, child: Text('بدون قضية (مصروف مكتبي عام)')),

@@ -63,7 +63,7 @@ class CommunicationsScreen extends ConsumerWidget {
                     isExpanded: true,
                     initialValue: selectedClientId,
                     decoration:
-                        const InputDecoration(labelText: 'الموكل (اختياري)'),
+                        const InputDecoration(labelText: 'الموكل'),
                     items: [
                       const DropdownMenuItem(
                           value: null, child: Text('بدون تحديد موكل')),
@@ -84,7 +84,7 @@ class CommunicationsScreen extends ConsumerWidget {
                     isExpanded: true,
                     initialValue: selectedCaseId,
                     decoration:
-                        const InputDecoration(labelText: 'القضية (اختياري)'),
+                        const InputDecoration(labelText: 'القضية'),
                     items: [
                       const DropdownMenuItem(
                           value: null, child: Text('بدون تحديد قضية')),

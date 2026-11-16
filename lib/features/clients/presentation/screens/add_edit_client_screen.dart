@@ -190,7 +190,7 @@ class _AddEditClientScreenState extends ConsumerState<AddEditClientScreen> {
                 Expanded(
                   child: AppTextField(
                     controller: _phoneSecCtrl,
-                    label: 'هاتف إضافي (اختياري)',
+                    label: 'هاتف إضافي',
                     hint: 'هاتف أرضي أو جوال',
                     keyboardType: TextInputType.phone,
                   ),
@@ -218,7 +218,7 @@ class _AddEditClientScreenState extends ConsumerState<AddEditClientScreen> {
 
             AppTextField(
               controller: _emailCtrl,
-              label: 'البريد الإلكتروني (اختياري)',
+              label: 'البريد الإلكتروني',
               hint: 'example@email.com',
               keyboardType: TextInputType.emailAddress,
             ),

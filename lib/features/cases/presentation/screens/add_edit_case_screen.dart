@@ -55,6 +55,33 @@ class _OpponentFormData {
   }
 }
 
+class _ConcludedStageFormData {
+  final TextEditingController courtCtrl = TextEditingController();
+  final TextEditingController caseNumCtrl = TextEditingController();
+  final TextEditingController yearCtrl =
+      TextEditingController(text: (DateTime.now().year - 1).toString());
+  final TextEditingController claimBadgeCtrl = TextEditingController();
+  final TextEditingController decisionRulingCtrl = TextEditingController();
+  final TextEditingController decisionNumCtrl = TextEditingController();
+  DateTime? decisionDate;
+  DateTime? notificationDate;
+  final TextEditingController groundsCtrl = TextEditingController();
+  final List<({int date, String action, String? decision})> hearings = [];
+  final TextEditingController newHearingActionCtrl = TextEditingController();
+  DateTime newHearingDate = DateTime.now().subtract(const Duration(days: 30));
+
+  void dispose() {
+    courtCtrl.dispose();
+    caseNumCtrl.dispose();
+    yearCtrl.dispose();
+    claimBadgeCtrl.dispose();
+    decisionRulingCtrl.dispose();
+    decisionNumCtrl.dispose();
+    groundsCtrl.dispose();
+    newHearingActionCtrl.dispose();
+  }
+}
+
 class AddEditCaseScreen extends ConsumerStatefulWidget {
   final String? caseId;
 
@@ -103,6 +130,17 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
   final _agreedFeeCtrl = TextEditingController();
   final _paidAmountCtrl = TextEditingController();
   String _selectedCurrency = 'SYP';
+
+  // حالة القضية عند التسجيل (قيد النظر / مفصولة / مطعون بها ومستأنفة)
+  String _caseStatus = 'OPEN'; // 'OPEN', 'CLOSED', 'APPEALED'
+
+  // بيانات قرار الفصل إن كانت القضية مفصولة
+  DateTime? _resolutionDate;
+  final _decisionNumberCtrl = TextEditingController();
+  final _decisionRulingCtrl = TextEditingController();
+
+  // بيانات المراحل المفصولة السابقة إن كانت القضية مطعون بها أو مستأنفة (يدعم استئناف وطعن متعدد)
+  final List<_ConcludedStageFormData> _pastStages = [];
 
   bool _isInit = false;
   bool _isSubmitting = false;
@@ -275,22 +313,17 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
     _notesCtrl.dispose();
     _agreedFeeCtrl.dispose();
     _paidAmountCtrl.dispose();
+    _decisionNumberCtrl.dispose();
+    _decisionRulingCtrl.dispose();
+    for (final stg in _pastStages) {
+      stg.dispose();
+    }
     super.dispose();
   }
 
   void _addHearing() {
-    final action = _newHearingActionCtrl.text.trim();
-    if (action.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى كتابة العمل المطلوب أولاً (حقل إجباري)'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
+    final text = _newHearingActionCtrl.text.trim();
+    final action = text.isNotEmpty ? text : 'جلسة';
     setState(() {
       _hearings.add((
         id: null,
@@ -304,18 +337,8 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
   }
 
   void _addTask() {
-    final title = _newTaskTitleCtrl.text.trim();
-    if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى كتابة بيان العمل المطلوب أولاً (حقل إجباري)'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
+    final text = _newTaskTitleCtrl.text.trim();
+    final title = text.isNotEmpty ? text : 'إجراء قضائي';
     setState(() {
       _tasks.add((
         date: _newTaskDate.millisecondsSinceEpoch,
@@ -850,6 +873,71 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
           context.pop();
         }
       } else {
+        String? outcomeText;
+        int? effectiveClosingDate;
+        if (_caseStatus == 'CLOSED') {
+          effectiveClosingDate = _resolutionDate?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch;
+          final parts = <String>[];
+          if (_decisionNumberCtrl.text.trim().isNotEmpty) {
+            parts.add('رقم قرار الفصل: ${_decisionNumberCtrl.text.trim()}');
+          }
+          if (_decisionRulingCtrl.text.trim().isNotEmpty) {
+            parts.add(_decisionRulingCtrl.text.trim());
+          }
+          outcomeText = parts.isNotEmpty ? parts.join('\n') : 'فُصلت القضية';
+        }
+
+        final pastStagesData = <({
+          String courtName,
+          String caseNumber,
+          int caseYear,
+          String? claimBadge,
+          String? decisionRuling,
+          String? decisionNum,
+          int? decisionDate,
+          int? notificationDate,
+          String? grounds,
+          List<({int date, String action, String? decision})> hearings,
+        })>[];
+
+        if (_caseStatus == 'APPEALED') {
+          for (final stg in _pastStages) {
+            if (stg.courtCtrl.text.trim().isNotEmpty ||
+                stg.caseNumCtrl.text.trim().isNotEmpty ||
+                stg.decisionRulingCtrl.text.trim().isNotEmpty ||
+                stg.decisionNumCtrl.text.trim().isNotEmpty ||
+                stg.claimBadgeCtrl.text.trim().isNotEmpty ||
+                stg.groundsCtrl.text.trim().isNotEmpty ||
+                stg.hearings.isNotEmpty) {
+              pastStagesData.add((
+                courtName: stg.courtCtrl.text.trim().isNotEmpty
+                    ? stg.courtCtrl.text.trim()
+                    : 'محكمة سابقة',
+                caseNumber: stg.caseNumCtrl.text.trim().isNotEmpty
+                    ? stg.caseNumCtrl.text.trim()
+                    : '-',
+                caseYear: int.tryParse(stg.yearCtrl.text.trim()) ??
+                    (DateTime.now().year - 1),
+                claimBadge: stg.claimBadgeCtrl.text.trim().isNotEmpty
+                    ? stg.claimBadgeCtrl.text.trim()
+                    : null,
+                decisionRuling: stg.decisionRulingCtrl.text.trim().isNotEmpty
+                    ? stg.decisionRulingCtrl.text.trim()
+                    : null,
+                decisionNum: stg.decisionNumCtrl.text.trim().isNotEmpty
+                    ? stg.decisionNumCtrl.text.trim()
+                    : null,
+                decisionDate: stg.decisionDate?.millisecondsSinceEpoch,
+                notificationDate: stg.notificationDate?.millisecondsSinceEpoch,
+                grounds: stg.groundsCtrl.text.trim().isNotEmpty
+                    ? stg.groundsCtrl.text.trim()
+                    : null,
+                hearings: stg.hearings,
+              ));
+            }
+          }
+        }
+
         await ref.read(casesRepositoryProvider).createFullLegalCase(
               clients: clientInputs,
               opponents: opponentInputs,
@@ -857,6 +945,11 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
               caseYear: year,
               caseType: _selectedCaseType ?? 'دعوى عامة',
               courtId: _selectedCourtId,
+              stage: _caseStatus == 'APPEALED' ? 'استئناف' : 'بداية',
+              status: _caseStatus,
+              outcome: outcomeText,
+              closingDate: effectiveClosingDate,
+              pastStages: pastStagesData,
               notes: _notesCtrl.text.trim(),
               initialHearings: _hearings
                   .map((h) => (date: h.date, action: h.action))
@@ -873,7 +966,7 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
               : clientInputs.first.name;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('تم قيد قضية ($title) بنجاح'),
+              content: Text('تم إنشاء قضية ($title) بنجاح'),
               backgroundColor: Colors.green,
             ),
           );
@@ -899,7 +992,7 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.caseId == null ? 'قيد قضية جديدة' : 'تعديل القضية'),
+        title: Text(widget.caseId == null ? 'قضية جديدة' : 'تعديل القضية'),
       ),
       body: Form(
         key: _formKey,
@@ -907,34 +1000,43 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             // ================= 1. الموكلون (أصحاب الدعوى - يدعم موكلين متعددين) =================
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.people_alt,
-                        size: 20, color: theme.colorScheme.primary),
-                    const SizedBox(width: 8),
-                    Text(
-                      'الموكلون (${_clients.length})',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                  ],
-                ),
-                TextButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _clients.add(_ClientFormData());
-                    });
-                  },
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('إضافة موكل +'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.people_alt,
+                          size: 20, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        'الموكلون (${_clients.length})',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        final primaryRole = _clients.isNotEmpty ? _clients.first.role : 'PLAINTIFF';
+                        _clients.add(_ClientFormData()..role = primaryRole);
+                      });
+                    },
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('إضافة موكل +'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 8),
 
@@ -971,11 +1073,24 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
                         ),
                         Row(
                           children: [
-                            _buildRoleToggle(
-                              currentRole: cl.role,
-                              onChanged: (r) => setState(() => cl.role = r),
-                              theme: theme,
-                            ),
+                            if (idx == 0)
+                              _buildRoleToggle(
+                                currentRole: cl.role,
+                                onChanged: (r) {
+                                  setState(() {
+                                    cl.role = r;
+                                    for (final otherCl in _clients) {
+                                      otherCl.role = r;
+                                    }
+                                  });
+                                },
+                                theme: theme,
+                              )
+                            else
+                              AppStatusBadge(
+                                label: cl.role == 'PLAINTIFF' ? 'مدعي' : 'مدعى عليه',
+                                color: cl.role == 'PLAINTIFF' ? Colors.blue : Colors.red,
+                              ),
                             if (_clients.length > 1) ...[
                               const SizedBox(width: 6),
                               IconButton(
@@ -1106,7 +1221,7 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
                         tilePadding: EdgeInsets.zero,
                         dense: true,
                         title: Text(
-                          'بيانات الاتصال والعنوان للموكل ${idx + 1} (اختياري)',
+                          'بيانات الاتصال والعنوان للموكل ${idx + 1}',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -1169,34 +1284,44 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
             const SizedBox(height: 12),
 
             // ================= 2. الخصوم (الأطراف المقابلة - يدعم خصوماً متعددين) =================
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.shield_outlined,
-                        size: 20, color: Colors.red.shade700),
-                    const SizedBox(width: 8),
-                    Text(
-                      'الخصوم (${_opponents.length})',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                  ],
-                ),
-                TextButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _opponents.add(_OpponentFormData());
-                    });
-                  },
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('إضافة خصم +'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.shield_outlined,
+                          size: 20, color: Colors.red.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        'الخصوم (${_opponents.length})',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        final primaryRole = _clients.isNotEmpty ? _clients.first.role : 'PLAINTIFF';
+                        final oppRole = (primaryRole == 'PLAINTIFF') ? 'DEFENDANT' : 'PLAINTIFF';
+                        _opponents.add(_OpponentFormData()..role = oppRole);
+                      });
+                    },
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('إضافة خصم +'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 8),
 
@@ -1233,11 +1358,24 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
                         ),
                         Row(
                           children: [
-                            _buildRoleToggle(
-                              currentRole: opp.role,
-                              onChanged: (r) => setState(() => opp.role = r),
-                              theme: theme,
-                            ),
+                            if (idx == 0)
+                              _buildRoleToggle(
+                                currentRole: opp.role,
+                                onChanged: (r) {
+                                  setState(() {
+                                    opp.role = r;
+                                    for (final otherOpp in _opponents) {
+                                      otherOpp.role = r;
+                                    }
+                                  });
+                                },
+                                theme: theme,
+                              )
+                            else
+                              AppStatusBadge(
+                                label: opp.role == 'PLAINTIFF' ? 'مدعي' : 'مدعى عليه',
+                                color: opp.role == 'PLAINTIFF' ? Colors.blue : Colors.red,
+                              ),
                             if (_opponents.length > 1) ...[
                               const SizedBox(width: 6),
                               IconButton(
@@ -1273,7 +1411,7 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
                         tilePadding: EdgeInsets.zero,
                         dense: true,
                         title: Text(
-                          'بيانات الاتصال والعنوان للخصم ${idx + 1} (اختياري)',
+                          'بيانات الاتصال والعنوان للخصم ${idx + 1}',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -1335,14 +1473,441 @@ class _AddEditCaseScreenState extends ConsumerState<AddEditCaseScreen> {
             }),
             const SizedBox(height: 16),
 
-            // 3. رقم الأساس
+            // ================= 3. حالة القضية عند التسجيل =================
+            if (widget.caseId == null) ...[
+              Row(
+                children: [
+                  Icon(Icons.timeline, size: 20, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'حالة القضية عند التسجيل',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('قيد النظر',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    selected: _caseStatus == 'OPEN',
+                    avatar: const Icon(Icons.hourglass_top, size: 16),
+                    onSelected: (_) => setState(() => _caseStatus = 'OPEN'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('مفصولة',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    selected: _caseStatus == 'CLOSED',
+                    avatar: const Icon(Icons.verified, size: 16),
+                    onSelected: (_) => setState(() => _caseStatus = 'CLOSED'),
+                  ),
+                  ChoiceChip(
+                    label: const Text('مستأنفة / طعن',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    selected: _caseStatus == 'APPEALED',
+                    avatar: const Icon(Icons.upgrade, size: 16),
+                    onSelected: (_) {
+                      setState(() {
+                        _caseStatus = 'APPEALED';
+                        if (_pastStages.isEmpty) {
+                          _pastStages.add(_ConcludedStageFormData());
+                        }
+                      });
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              // بطاقة قرار الفصل في حال كانت القضية مفصولة
+              if (_caseStatus == 'CLOSED') ...[
+                AppCard(
+                  color: Colors.green.withAlpha(20),
+                  border: Border.all(color: Colors.green.withAlpha(60)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.verified, color: Colors.green, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'بيانات قرار الفصل',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.calendar_month, size: 18),
+                              label: Text(
+                                _resolutionDate != null
+                                    ? 'تاريخ الفصل: ${AppDateFormatter.formatDate(_resolutionDate!)}'
+                                    : 'تاريخ الفصل',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                              onPressed: () async {
+                                final d = await showDatePicker(
+                                  context: context,
+                                  initialDate: _resolutionDate ?? DateTime.now(),
+                                  firstDate: DateTime(2000),
+                                  lastDate: DateTime(2035),
+                                );
+                                if (d != null) {
+                                  setState(() => _resolutionDate = d);
+                                }
+                              },
+                            ),
+                          ),
+                          if (_resolutionDate != null)
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () => setState(() => _resolutionDate = null),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      AppTextField(
+                        controller: _decisionNumberCtrl,
+                        label: 'رقم قرار الفصل',
+                        hint: 'رقم القرار',
+                      ),
+                      const SizedBox(height: 10),
+                      AppTextField(
+                        controller: _decisionRulingCtrl,
+                        label: 'قرار الفصل',
+                        hint: 'قرار الفصل',
+                        enableSpeech: true,
+                        maxLines: 3,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+
+              // بطاقات المراحل المفصولة السابقة في حال كانت القضية طعناً أو استئنافاً (يدعم مراحل متعددة)
+              if (_caseStatus == 'APPEALED') ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.history_edu, color: Colors.purple, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'المراحل المفصولة السابقة (${_pastStages.length})',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Colors.purple,
+                            ),
+                          ),
+                        ],
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _pastStages.add(_ConcludedStageFormData());
+                          });
+                        },
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('إضافة مرحلة سابقة +'),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                ..._pastStages.asMap().entries.map((entry) {
+                  final stgIdx = entry.key;
+                  final stg = entry.value;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: AppCard(
+                      color: Colors.purple.withAlpha(20),
+                      border: Border.all(color: Colors.purple.withAlpha(60)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'المرحلة السابقة ${stgIdx + 1}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Colors.purple,
+                                ),
+                              ),
+                              if (_pastStages.length > 1)
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline,
+                                      color: Colors.red, size: 20),
+                                  tooltip: 'حذف هذه المرحلة',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () {
+                                    setState(() {
+                                      stg.dispose();
+                                      _pastStages.removeAt(stgIdx);
+                                    });
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          AppTextField(
+                            controller: stg.courtCtrl,
+                            label: 'المحكمة السابقة',
+                            hint: 'مثال: ب م 7 أو استئناف 8',
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: AppTextField(
+                                  controller: stg.caseNumCtrl,
+                                  label: 'رقم الأساس',
+                                  hint: '26003',
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 2,
+                                child: AppTextField(
+                                  controller: stg.yearCtrl,
+                                  label: 'العام',
+                                  hint: '2024',
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          AppTextField(
+                            controller: stg.claimBadgeCtrl,
+                            label: 'شارة الدعوى (إن وجدت)',
+                            hint: 'رقم 3211 تاريخ 1/10/2024',
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: AppTextField(
+                                  controller: stg.decisionNumCtrl,
+                                  label: 'رقم قرار الفصل',
+                                  hint: '1070',
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 3,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.calendar_month, size: 16),
+                                  label: Text(
+                                    stg.decisionDate != null
+                                        ? AppDateFormatter.formatDate(stg.decisionDate!)
+                                        : 'تاريخ القرار',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  onPressed: () async {
+                                    final d = await showDatePicker(
+                                      context: context,
+                                      initialDate: stg.decisionDate ?? DateTime.now(),
+                                      firstDate: DateTime(2000),
+                                      lastDate: DateTime(2035),
+                                    );
+                                    if (d != null) {
+                                      setState(() => stg.decisionDate = d);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          AppTextField(
+                            controller: stg.decisionRulingCtrl,
+                            label: 'قرار الفصل',
+                            hint: 'قرار الفصل',
+                            enableSpeech: true,
+                            maxLines: 2,
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.mark_email_read, size: 16),
+                                  label: Text(
+                                    stg.notificationDate != null
+                                        ? 'تاريخ التبليغ: ${AppDateFormatter.formatDate(stg.notificationDate!)}'
+                                        : 'تاريخ التبليغ',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  onPressed: () async {
+                                    final d = await showDatePicker(
+                                      context: context,
+                                      initialDate: stg.notificationDate ?? DateTime.now(),
+                                      firstDate: DateTime(2000),
+                                      lastDate: DateTime(2035),
+                                    );
+                                    if (d != null) {
+                                      setState(() => stg.notificationDate = d);
+                                    }
+                                  },
+                                ),
+                              ),
+                              if (stg.notificationDate != null)
+                                IconButton(
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  onPressed: () => setState(() => stg.notificationDate = null),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          AppTextField(
+                            controller: stg.groundsCtrl,
+                            label: 'أسباب الاستئناف / الطعن',
+                            hint: 'أسباب الطعن',
+                            enableSpeech: true,
+                            maxLines: 2,
+                          ),
+                          const SizedBox(height: 10),
+                          // جلسات وإجراءات هذه المرحلة
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'جلسات وإجراءات هذه المرحلة (${stg.hearings.length})',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.calendar_month, size: 16),
+                                  label: Text(
+                                    AppDateFormatter.formatDate(stg.newHearingDate),
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  onPressed: () async {
+                                    final d = await showDatePicker(
+                                      context: context,
+                                      initialDate: stg.newHearingDate,
+                                      firstDate: DateTime(2000),
+                                      lastDate: DateTime(2035),
+                                    );
+                                    if (d != null) {
+                                      setState(() => stg.newHearingDate = d);
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 2,
+                                child: AppTextField(
+                                  controller: stg.newHearingActionCtrl,
+                                  label: 'الإجراء / الجلسة',
+                                  hint: 'تبليغ / استمهال / تدقيق',
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              IconButton.filled(
+                                icon: const Icon(Icons.add, size: 18),
+                                onPressed: () {
+                                  final actionText = stg.newHearingActionCtrl.text.trim();
+                                  final resolvedAction = actionText.isNotEmpty ? actionText : 'جلسة';
+                                  setState(() {
+                                    stg.hearings.add((
+                                      date: stg.newHearingDate.millisecondsSinceEpoch,
+                                      action: resolvedAction,
+                                      decision: null,
+                                    ));
+                                    stg.newHearingActionCtrl.clear();
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                          if (stg.hearings.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            ...stg.hearings.asMap().entries.map((hEntry) {
+                              final hIdx = hEntry.key;
+                              final h = hEntry.value;
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '${AppDateFormatter.formatDate(DateTime.fromMillisecondsSinceEpoch(h.date))}: ${h.action}',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close,
+                                          size: 16, color: Colors.red),
+                                      onPressed: () => setState(() =>
+                                          stg.hearings.removeAt(hIdx)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 14),
+              ],
+            ],
+
+            // 4. رقم الأساس والمحكمة
             Row(
               children: [
                 Expanded(
                   flex: 3,
                   child: AppTextField(
                     controller: _caseNumberCtrl,
-                    label: 'رقم الأساس (اختياري)',
+                    label: 'رقم الأساس',
                     hint: '1450',
                     keyboardType: TextInputType.number,
                   ),
